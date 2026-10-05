@@ -12,17 +12,34 @@ import {
   Layers,
   RefreshCw,
   Server,
+  Link as LinkIcon,
+  Search,
+  Filter,
+  X,
+  ChevronRight,
+  RotateCcw,
 } from "lucide-react";
 import {
   INCIDENT_STATUSES,
   INCIDENT_SEVERITIES,
+  IncidentStatus,
 } from "@contracts";
 import { serviceKeys, listServices, QueryProvider } from "./api/index.ts";
+import { useUrlState, serializeUrlState } from "./hooks/index.ts";
 
 function AppContent() {
   const [isOnline, setIsOnline] = useState<boolean>(
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
+
+  const {
+    state: urlState,
+    setUrlState,
+    resetFilters,
+    clearAll,
+    openIncident,
+    closeIncident,
+  } = useUrlState();
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -59,6 +76,16 @@ function AppContent() {
     : isServicesError
     ? "disconnected"
     : "connected";
+
+  const toggleStatusFilter = (status: IncidentStatus) => {
+    const exists = urlState.status.includes(status);
+    const nextStatuses = exists
+      ? urlState.status.filter((s) => s !== status)
+      : [...urlState.status, status];
+    setUrlState({ status: nextStatuses });
+  };
+
+  const serializedQuery = serializeUrlState(urlState);
 
   return (
     <div className="min-h-screen bg-app-bg text-txt-primary flex flex-col selection:bg-blue-600 selection:text-white">
@@ -229,6 +256,148 @@ function AppContent() {
               </span>
             </div>
           </div>
+
+          {/* URL State Synchronization Diagnostics Panel */}
+          <section
+            aria-labelledby="url-state-heading"
+            className="mt-6 p-4 rounded-lg bg-surface-elevated border border-border-subtle"
+          >
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <LinkIcon className="w-4 h-4 text-cyan-400" aria-hidden="true" />
+                <h2 id="url-state-heading" className="text-sm font-semibold text-txt-primary">
+                  URL State Synchronization (<code className="font-mono text-cyan-300">useUrlState</code>)
+                </h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 transition-colors"
+                >
+                  <Filter className="w-3 h-3" />
+                  <span>Reset Filters</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 transition-colors"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Clear All</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Current Serialized URL String */}
+            <div className="p-2.5 rounded bg-app-bg border border-border-subtle font-mono text-xs text-txt-secondary flex items-center justify-between gap-2 overflow-x-auto">
+              <span className="text-slate-400 shrink-0">Current Query:</span>
+              <span className="text-cyan-300 truncate">
+                {serializedQuery ? `?${serializedQuery}` : "(empty - all defaults)"}
+              </span>
+            </div>
+
+            {/* Interactive URL State Controls for Browser Verification */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3 text-xs">
+              {/* Search q input with replace: true */}
+              <div className="p-3 rounded bg-app-bg border border-border-subtle">
+                <label htmlFor="url-search-input" className="block text-txt-secondary mb-1">
+                  Search Query (q)
+                </label>
+                <div className="relative">
+                  <input
+                    id="url-search-input"
+                    type="text"
+                    value={urlState.q}
+                    onChange={(e) => setUrlState({ q: e.target.value }, { replace: true })}
+                    placeholder="Search incidents..."
+                    className="w-full bg-surface-elevated border border-border-subtle rounded px-2.5 py-1 text-txt-primary text-xs placeholder:text-txt-muted focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <Search className="w-3.5 h-3.5 text-txt-muted absolute right-2.5 top-1.5 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Status Multi-Select Toggle */}
+              <div className="p-3 rounded bg-app-bg border border-border-subtle">
+                <div className="text-txt-secondary mb-1">Status Filter (resets page: 1)</div>
+                <div className="flex flex-wrap gap-1">
+                  {INCIDENT_STATUSES.map((status) => {
+                    const active = urlState.status.includes(status);
+                    return (
+                      <button
+                        key={status}
+                        type="button"
+                        onClick={() => toggleStatusFilter(status)}
+                        className={`px-1.5 py-0.5 rounded text-[11px] font-mono transition-colors ${
+                          active
+                            ? "bg-blue-600 text-white font-semibold"
+                            : "bg-surface-elevated text-slate-400 hover:text-slate-200 border border-slate-700"
+                        }`}
+                      >
+                        {status}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Pagination Controls */}
+              <div className="p-3 rounded bg-app-bg border border-border-subtle">
+                <div className="text-txt-secondary mb-1">Pagination State</div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-txt-primary">
+                    Page {urlState.page} &bull; {urlState.pageSize}/page
+                  </span>
+                  <div className="flex gap-1 ml-auto">
+                    <button
+                      type="button"
+                      disabled={urlState.page <= 1}
+                      onClick={() => setUrlState({ page: Math.max(1, urlState.page - 1) })}
+                      className="px-2 py-0.5 rounded bg-surface-elevated hover:bg-slate-700 disabled:opacity-40 text-slate-300 font-mono text-[11px]"
+                    >
+                      -1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUrlState({ page: urlState.page + 1 })}
+                      className="px-2 py-0.5 rounded bg-surface-elevated hover:bg-slate-700 text-slate-300 font-mono text-[11px]"
+                    >
+                      +1
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Incident Detail Drawer Hook */}
+              <div className="p-3 rounded bg-app-bg border border-border-subtle">
+                <div className="text-txt-secondary mb-1">Detail Drawer (incidentId)</div>
+                <div className="flex items-center gap-1.5">
+                  {urlState.incidentId ? (
+                    <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-950/60 text-amber-300 border border-amber-800 font-mono">
+                      <span>{urlState.incidentId}</span>
+                      <button
+                        type="button"
+                        onClick={closeIncident}
+                        className="hover:text-amber-100"
+                        title="Close incident drawer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openIncident("INC-1042")}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-950/80 hover:bg-blue-900 text-blue-300 border border-blue-700 font-mono transition-colors"
+                    >
+                      <span>Open INC-1042</span>
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
 
           {/* Backend Connection Diagnostics Section */}
           <section
