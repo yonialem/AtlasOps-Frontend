@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   ShieldAlert,
   Activity,
@@ -9,17 +10,19 @@ import {
   AlertTriangle,
   Clock,
   Layers,
+  RefreshCw,
+  Server,
 } from "lucide-react";
 import {
   INCIDENT_STATUSES,
   INCIDENT_SEVERITIES,
 } from "@contracts";
+import { serviceKeys, listServices, QueryProvider } from "./api/index.ts";
 
-export function App() {
+function AppContent() {
   const [isOnline, setIsOnline] = useState<boolean>(
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
-  const [mockApiStatus, setMockApiStatus] = useState<"checking" | "connected" | "disconnected">("checking");
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -28,19 +31,34 @@ export function App() {
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
 
-    // Initial lightweight probe to API
-    fetch("/api/services")
-      .then((res) => {
-        if (res.ok) setMockApiStatus("connected");
-        else setMockApiStatus("disconnected");
-      })
-      .catch(() => setMockApiStatus("disconnected"));
-
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
   }, []);
+
+  // TanStack Query hook fetching /api/services to inspect backend health and connection
+  const {
+    data: services,
+    isLoading: isServicesLoading,
+    isError: isServicesError,
+    error: servicesError,
+    refetch: refetchServices,
+    isFetching: isServicesFetching,
+    dataUpdatedAt,
+  } = useQuery({
+    queryKey: serviceKeys.list(),
+    queryFn: ({ signal }) => listServices(signal),
+    enabled: isOnline,
+  });
+
+  const apiStatus: "checking" | "connected" | "disconnected" = !isOnline
+    ? "disconnected"
+    : isServicesLoading
+    ? "checking"
+    : isServicesError
+    ? "disconnected"
+    : "connected";
 
   return (
     <div className="min-h-screen bg-app-bg text-txt-primary flex flex-col selection:bg-blue-600 selection:text-white">
@@ -86,7 +104,7 @@ export function App() {
                 </span>
               </div>
               <p className="text-xs text-txt-secondary hidden sm:block">
-                Production Incident Management & High-Availability Triage
+                Production Incident Management &amp; High-Availability Triage
               </p>
             </div>
           </div>
@@ -94,31 +112,71 @@ export function App() {
           <div className="flex items-center gap-3">
             {/* Operational Status Badge */}
             <div
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-950/60 border border-emerald-600/40 text-emerald-300"
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${
+                apiStatus === "connected"
+                  ? "bg-emerald-950/60 border-emerald-600/40 text-emerald-300"
+                  : apiStatus === "checking"
+                  ? "bg-blue-950/60 border-blue-600/40 text-blue-300"
+                  : "bg-red-950/60 border-red-600/40 text-red-300"
+              }`}
               aria-label="System operational status"
             >
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                {apiStatus === "connected" && (
+                  <>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </>
+                )}
+                {apiStatus === "checking" && (
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-400 animate-pulse"></span>
+                )}
+                {apiStatus === "disconnected" && (
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-400"></span>
+                )}
               </span>
-              <span>Systems Operational</span>
+              <span>
+                {apiStatus === "connected"
+                  ? "Systems Operational"
+                  : apiStatus === "checking"
+                  ? "Probing API..."
+                  : "API Disconnected"}
+              </span>
             </div>
 
             {/* Connection Status Indicator */}
             <div
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono border ${
-                isOnline && mockApiStatus !== "disconnected"
+                isOnline && apiStatus === "connected"
                   ? "bg-slate-800 border-slate-700 text-slate-300"
+                  : isOnline && apiStatus === "checking"
+                  ? "bg-blue-950/60 border-blue-700 text-blue-300"
                   : "bg-amber-950/60 border-amber-600/40 text-amber-300"
               }`}
-              title={isOnline ? "Network: Online | API: Proxying to :3001" : "Network: Offline"}
+              title={
+                isOnline
+                  ? `Network: Online | API: ${apiStatus} | Proxy: :3001`
+                  : "Network: Offline"
+              }
             >
               {isOnline ? (
-                <>
-                  <Wifi className="w-3.5 h-3.5 text-blue-400" aria-hidden="true" />
-                  <span className="hidden md:inline">API Proxy :3001</span>
-                  <span className="md:hidden">Connected</span>
-                </>
+                apiStatus === "connected" ? (
+                  <>
+                    <Wifi className="w-3.5 h-3.5 text-blue-400" aria-hidden="true" />
+                    <span className="hidden md:inline">API Connected (:3001)</span>
+                    <span className="md:hidden">Connected</span>
+                  </>
+                ) : apiStatus === "checking" ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 text-blue-400 animate-spin" aria-hidden="true" />
+                    <span>Checking API</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
+                    <span>Disconnected</span>
+                  </>
+                )
               ) : (
                 <>
                   <WifiOff className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
@@ -126,11 +184,24 @@ export function App() {
                 </>
               )}
             </div>
+
+            {/* Manual Retry Connection Button if error */}
+            {isOnline && apiStatus === "disconnected" && (
+              <button
+                type="button"
+                onClick={() => refetchServices()}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+                title="Retry connecting to API"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Retry</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
 
-      {/* Main Content Area / Welcoming Placeholder */}
+      {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col justify-center">
         <div className="bg-surface border border-border-subtle rounded-xl p-8 shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 -mt-10 -mr-10 w-72 h-72 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -159,6 +230,114 @@ export function App() {
             </div>
           </div>
 
+          {/* Backend Connection Diagnostics Section */}
+          <section
+            aria-labelledby="diagnostics-heading"
+            className="mt-6 p-4 rounded-lg bg-surface-elevated border border-border-subtle"
+          >
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <Server className="w-4 h-4 text-blue-400" aria-hidden="true" />
+                <h2 id="diagnostics-heading" className="text-sm font-semibold text-txt-primary">
+                  Backend API &amp; TanStack Query Diagnostics
+                </h2>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                {isServicesFetching && (
+                  <span className="inline-flex items-center gap-1 text-blue-400">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    Fetching...
+                  </span>
+                )}
+                {dataUpdatedAt > 0 && (
+                  <span className="text-txt-secondary font-mono">
+                    Last synced: {new Date(dataUpdatedAt).toLocaleTimeString()}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="p-3 rounded bg-app-bg border border-border-subtle">
+                <div className="text-txt-secondary mb-1">Health Probe (/api/services)</div>
+                <div className="font-semibold text-txt-primary flex items-center gap-1.5">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      apiStatus === "connected"
+                        ? "bg-emerald-400"
+                        : apiStatus === "checking"
+                        ? "bg-blue-400 animate-pulse"
+                        : "bg-red-400"
+                    }`}
+                  />
+                  <span>
+                    {apiStatus === "connected"
+                      ? "200 OK (Healthy)"
+                      : apiStatus === "checking"
+                      ? "Probing..."
+                      : "Unreachable / Error"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded bg-app-bg border border-border-subtle">
+                <div className="text-txt-secondary mb-1">Discovered Services</div>
+                <div className="font-semibold text-txt-primary">
+                  {services ? `${services.length} Monitored Services` : "Pending discovery..."}
+                </div>
+              </div>
+
+              <div className="p-3 rounded bg-app-bg border border-border-subtle">
+                <div className="text-txt-secondary mb-1">Cache Configuration</div>
+                <div className="font-mono text-txt-primary">
+                  staleTime: 30s &bull; gcTime: 5m
+                </div>
+              </div>
+            </div>
+
+            {/* List discovered services if available */}
+            {services && services.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-border-subtle">
+                <div className="text-xs text-txt-secondary mb-2">Monitored Service Catalog:</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {services.map((svc) => (
+                    <span
+                      key={svc}
+                      className="px-2 py-0.5 rounded text-xs font-mono bg-blue-950/60 text-blue-300 border border-blue-800"
+                    >
+                      {svc}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Error diagnostics banner if error */}
+            {isServicesError && (
+              <div
+                role="alert"
+                className="mt-3 p-3 rounded bg-red-950/50 border border-red-800 text-xs text-red-200 flex items-start justify-between gap-3"
+              >
+                <div>
+                  <div className="font-semibold text-red-300 mb-0.5">Connection Error</div>
+                  <div>
+                    {servicesError instanceof Error
+                      ? servicesError.message
+                      : "Unable to reach backend API. Ensure mock/backend server is running."}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => refetchServices()}
+                  className="px-2.5 py-1 bg-red-800 hover:bg-red-700 text-white rounded font-medium flex items-center gap-1 transition-colors"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Retry
+                </button>
+              </div>
+            )}
+          </section>
+
           {/* Operational Architecture Capability Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
             <div className="bg-app-bg/60 border border-border-subtle rounded-lg p-4">
@@ -174,7 +353,7 @@ export function App() {
             <div className="bg-app-bg/60 border border-border-subtle rounded-lg p-4">
               <div className="flex items-center gap-2 text-emerald-400 font-medium text-sm mb-1.5">
                 <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
-                <span>Optimistic Updates & Resilience</span>
+                <span>Optimistic Updates &amp; Resilience</span>
               </div>
               <p className="text-xs text-txt-secondary leading-normal">
                 Sub-second status transitions and note postings with automatic version conflict detection, cache rollbacks, and offline mutation queuing.
@@ -202,7 +381,7 @@ export function App() {
             </div>
             <div className="flex items-center gap-1.5 text-slate-400">
               <AlertTriangle className="w-3.5 h-3.5 text-blue-400" aria-hidden="true" />
-              <span>WCAG 2.1 AA Compliant Contrast & Focus Management</span>
+              <span>WCAG 2.1 AA Compliant Contrast &amp; Focus Management</span>
             </div>
           </div>
         </div>
@@ -213,6 +392,14 @@ export function App() {
         AtlasOps Incident Management Console &bull; High Reliability Mission-Critical Tooling
       </footer>
     </div>
+  );
+}
+
+export function App() {
+  return (
+    <QueryProvider>
+      <AppContent />
+    </QueryProvider>
   );
 }
 
