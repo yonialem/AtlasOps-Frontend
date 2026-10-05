@@ -291,6 +291,8 @@ export function useUrlState(): UseUrlStateReturn {
         } else {
           window.history.pushState(null, "", newUrl);
         }
+
+        window.dispatchEvent(new Event("popstate"));
       }
     },
     []
