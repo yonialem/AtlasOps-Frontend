@@ -2,16 +2,11 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ShieldAlert,
-  Activity,
   Wifi,
   WifiOff,
   Terminal,
-  CheckCircle2,
   AlertTriangle,
-  Clock,
-  Layers,
   RefreshCw,
-  Server,
   Link as LinkIcon,
   Search,
   Filter,
@@ -21,11 +16,21 @@ import {
 } from "lucide-react";
 import {
   INCIDENT_STATUSES,
-  INCIDENT_SEVERITIES,
   IncidentStatus,
+  IncidentSortField,
 } from "@contracts";
-import { serviceKeys, listServices, QueryProvider } from "./api/index.ts";
+import {
+  incidentKeys,
+  listIncidents,
+  serviceKeys,
+  listServices,
+  QueryProvider,
+} from "./api/index.ts";
 import { useUrlState, serializeUrlState } from "./hooks/index.ts";
+import {
+  IncidentList,
+  PaginationControls,
+} from "./components/incidents/index.ts";
 
 function AppContent() {
   const [isOnline, setIsOnline] = useState<boolean>(
@@ -39,6 +44,7 @@ function AppContent() {
     clearAll,
     openIncident,
     closeIncident,
+    queryObject,
   } = useUrlState();
 
   useEffect(() => {
@@ -56,17 +62,24 @@ function AppContent() {
 
   // TanStack Query hook fetching /api/services to inspect backend health and connection
   const {
-    data: services,
     isLoading: isServicesLoading,
     isError: isServicesError,
-    error: servicesError,
     refetch: refetchServices,
-    isFetching: isServicesFetching,
-    dataUpdatedAt,
   } = useQuery({
     queryKey: serviceKeys.list(),
     queryFn: ({ signal }) => listServices(signal),
     enabled: isOnline,
+  });
+
+  // TanStack Query hook fetching incidents based on current URL parameters
+  const {
+    data: incidentsData,
+    isLoading: isIncidentsLoading,
+    isError: isIncidentsError,
+    refetch: refetchIncidents,
+  } = useQuery({
+    queryKey: incidentKeys.list(queryObject),
+    queryFn: ({ signal }) => listIncidents(queryObject, signal),
   });
 
   const apiStatus: "checking" | "connected" | "disconnected" = !isOnline
@@ -84,6 +97,21 @@ function AppContent() {
       : [...urlState.status, status];
     setUrlState({ status: nextStatuses });
   };
+
+  const handleSortChange = (field: IncidentSortField) => {
+    if (urlState.sort === field) {
+      setUrlState({ order: urlState.order === "asc" ? "desc" : "asc" });
+    } else {
+      setUrlState({ sort: field, order: "desc" });
+    }
+  };
+
+  const hasActiveFilters = Boolean(
+    urlState.q.trim() ||
+      urlState.status.length > 0 ||
+      urlState.severity.length > 0 ||
+      urlState.service.length > 0
+  );
 
   const serializedQuery = serializeUrlState(urlState);
 
@@ -230,7 +258,7 @@ function AppContent() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col justify-center">
-        <div className="bg-surface border border-border-subtle rounded-xl p-8 shadow-2xl relative overflow-hidden">
+        <div className="bg-surface border border-border-subtle rounded-xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 -mt-10 -mr-10 w-72 h-72 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
 
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 pb-6 border-b border-border-subtle">
@@ -242,7 +270,7 @@ function AppContent() {
                 </h1>
               </div>
               <p className="text-txt-secondary text-sm max-w-2xl leading-relaxed">
-                Frontend architecture and tooling are fully initialized. Built with React 18, TypeScript 5.5,
+                Production Incident Triage &amp; Management Interface. Built with React 18, TypeScript 5.5,
                 Tailwind CSS, and TanStack Query with strict WCAG 2.1 AA accessibility and full offline resilience.
               </p>
             </div>
@@ -257,7 +285,7 @@ function AppContent() {
             </div>
           </div>
 
-          {/* URL State Synchronization Diagnostics Panel */}
+          {/* URL State Synchronization Controls & Filter Panel */}
           <section
             aria-labelledby="url-state-heading"
             className="mt-6 p-4 rounded-lg bg-surface-elevated border border-border-subtle"
@@ -266,14 +294,14 @@ function AppContent() {
               <div className="flex items-center gap-2">
                 <LinkIcon className="w-4 h-4 text-cyan-400" aria-hidden="true" />
                 <h2 id="url-state-heading" className="text-sm font-semibold text-txt-primary">
-                  URL State Synchronization (<code className="font-mono text-cyan-300">useUrlState</code>)
+                  Incident Filters &amp; URL State (<code className="font-mono text-cyan-300">useUrlState</code>)
                 </h2>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={resetFilters}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 transition-colors"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 transition-colors"
                 >
                   <Filter className="w-3 h-3" />
                   <span>Reset Filters</span>
@@ -281,7 +309,7 @@ function AppContent() {
                 <button
                   type="button"
                   onClick={clearAll}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 transition-colors"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 transition-colors"
                 >
                   <RotateCcw className="w-3 h-3" />
                   <span>Clear All</span>
@@ -399,160 +427,55 @@ function AppContent() {
             </div>
           </section>
 
-          {/* Backend Connection Diagnostics Section */}
-          <section
-            aria-labelledby="diagnostics-heading"
-            className="mt-6 p-4 rounded-lg bg-surface-elevated border border-border-subtle"
-          >
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
-              <div className="flex items-center gap-2">
-                <Server className="w-4 h-4 text-blue-400" aria-hidden="true" />
-                <h2 id="diagnostics-heading" className="text-sm font-semibold text-txt-primary">
-                  Backend API &amp; TanStack Query Diagnostics
+          {/* Primary Incident Feed Section */}
+          <section aria-labelledby="incident-feed-heading" className="mt-8">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <div>
+                <h2 id="incident-feed-heading" className="text-lg font-bold text-txt-primary tracking-tight">
+                  Incidents Feed
                 </h2>
-              </div>
-              <div className="flex items-center gap-2 text-xs">
-                {isServicesFetching && (
-                  <span className="inline-flex items-center gap-1 text-blue-400">
-                    <RefreshCw className="w-3 h-3 animate-spin" />
-                    Fetching...
-                  </span>
-                )}
-                {dataUpdatedAt > 0 && (
-                  <span className="text-txt-secondary font-mono">
-                    Last synced: {new Date(dataUpdatedAt).toLocaleTimeString()}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-              <div className="p-3 rounded bg-app-bg border border-border-subtle">
-                <div className="text-txt-secondary mb-1">Health Probe (/api/services)</div>
-                <div className="font-semibold text-txt-primary flex items-center gap-1.5">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      apiStatus === "connected"
-                        ? "bg-emerald-400"
-                        : apiStatus === "checking"
-                        ? "bg-blue-400 animate-pulse"
-                        : "bg-red-400"
-                    }`}
-                  />
-                  <span>
-                    {apiStatus === "connected"
-                      ? "200 OK (Healthy)"
-                      : apiStatus === "checking"
-                      ? "Probing..."
-                      : "Unreachable / Error"}
-                  </span>
-                </div>
+                <p className="text-xs text-txt-secondary">
+                  High-availability incident triage across desktop table and mobile card views.
+                </p>
               </div>
 
-              <div className="p-3 rounded bg-app-bg border border-border-subtle">
-                <div className="text-txt-secondary mb-1">Discovered Services</div>
-                <div className="font-semibold text-txt-primary">
-                  {services ? `${services.length} Monitored Services` : "Pending discovery..."}
-                </div>
-              </div>
-
-              <div className="p-3 rounded bg-app-bg border border-border-subtle">
-                <div className="text-txt-secondary mb-1">Cache Configuration</div>
-                <div className="font-mono text-txt-primary">
-                  staleTime: 30s &bull; gcTime: 5m
-                </div>
-              </div>
-            </div>
-
-            {/* List discovered services if available */}
-            {services && services.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-border-subtle">
-                <div className="text-xs text-txt-secondary mb-2">Monitored Service Catalog:</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {services.map((svc) => (
-                    <span
-                      key={svc}
-                      className="px-2 py-0.5 rounded text-xs font-mono bg-blue-950/60 text-blue-300 border border-blue-800"
-                    >
-                      {svc}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Error diagnostics banner if error */}
-            {isServicesError && (
-              <div
-                role="alert"
-                className="mt-3 p-3 rounded bg-red-950/50 border border-red-800 text-xs text-red-200 flex items-start justify-between gap-3"
-              >
-                <div>
-                  <div className="font-semibold text-red-300 mb-0.5">Connection Error</div>
-                  <div>
-                    {servicesError instanceof Error
-                      ? servicesError.message
-                      : "Unable to reach backend API. Ensure mock/backend server is running."}
-                  </div>
-                </div>
+              {isIncidentsError && (
                 <button
                   type="button"
-                  onClick={() => refetchServices()}
-                  className="px-2.5 py-1 bg-red-800 hover:bg-red-700 text-white rounded font-medium flex items-center gap-1 transition-colors"
+                  onClick={() => refetchIncidents()}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-900/60 hover:bg-red-800 text-red-200 border border-red-700 transition-colors"
                 >
-                  <RefreshCw className="w-3 h-3" />
-                  Retry
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Retry Feed</span>
                 </button>
-              </div>
-            )}
+              )}
+            </div>
+
+            {/* Responsive Table / Card Container */}
+            <IncidentList
+              incidents={incidentsData?.items ?? []}
+              isLoading={isIncidentsLoading}
+              sort={urlState.sort}
+              order={urlState.order}
+              onSortChange={handleSortChange}
+              onSelectIncident={openIncident}
+              selectedIncidentId={urlState.incidentId}
+              onClearFilters={resetFilters}
+              hasActiveFilters={hasActiveFilters}
+            />
+
+            {/* Pagination Controls */}
+            <PaginationControls
+              page={urlState.page}
+              pageSize={urlState.pageSize}
+              total={incidentsData?.total ?? 0}
+              totalPages={incidentsData?.totalPages ?? 1}
+              onPageChange={(page) => setUrlState({ page })}
+              onPageSizeChange={(pageSize) => setUrlState({ pageSize })}
+              disabled={isIncidentsLoading}
+              className="mt-4 border-t border-border-subtle pt-2"
+            />
           </section>
-
-          {/* Operational Architecture Capability Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-            <div className="bg-app-bg/60 border border-border-subtle rounded-lg p-4">
-              <div className="flex items-center gap-2 text-blue-400 font-medium text-sm mb-1.5">
-                <Activity className="w-4 h-4" aria-hidden="true" />
-                <span>High-Speed Keyboard Triage</span>
-              </div>
-              <p className="text-xs text-txt-secondary leading-normal">
-                Engineered for rapid triaging with <kbd className="px-1.5 py-0.5 rounded bg-surface-elevated text-slate-200 border border-slate-600">j</kbd> / <kbd className="px-1.5 py-0.5 rounded bg-surface-elevated text-slate-200 border border-slate-600">k</kbd> navigation, <kbd className="px-1.5 py-0.5 rounded bg-surface-elevated text-slate-200 border border-slate-600">/</kbd> search, and <kbd className="px-1.5 py-0.5 rounded bg-surface-elevated text-slate-200 border border-slate-600">c</kbd> modal creation.
-              </p>
-            </div>
-
-            <div className="bg-app-bg/60 border border-border-subtle rounded-lg p-4">
-              <div className="flex items-center gap-2 text-emerald-400 font-medium text-sm mb-1.5">
-                <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
-                <span>Optimistic Updates &amp; Resilience</span>
-              </div>
-              <p className="text-xs text-txt-secondary leading-normal">
-                Sub-second status transitions and note postings with automatic version conflict detection, cache rollbacks, and offline mutation queuing.
-              </p>
-            </div>
-
-            <div className="bg-app-bg/60 border border-border-subtle rounded-lg p-4">
-              <div className="flex items-center gap-2 text-purple-400 font-medium text-sm mb-1.5">
-                <Layers className="w-4 h-4" aria-hidden="true" />
-                <span>Shared Contract Verification</span>
-              </div>
-              <p className="text-xs text-txt-secondary leading-normal">
-                Strict type safety and schema validation directly tied to <code className="text-blue-300">@contracts</code> with zero runtime type divergence.
-              </p>
-            </div>
-          </div>
-
-          {/* Contract Domain Tokens Indicator */}
-          <div className="mt-6 pt-4 border-t border-border-subtle flex flex-wrap items-center justify-between gap-4 text-xs text-txt-secondary">
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-slate-400" aria-hidden="true" />
-              <span>
-                Domain Contracts: {INCIDENT_STATUSES.length} Statuses ({INCIDENT_STATUSES.join(", ")}) &bull; {INCIDENT_SEVERITIES.length} Severities ({INCIDENT_SEVERITIES.join(", ")})
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 text-slate-400">
-              <AlertTriangle className="w-3.5 h-3.5 text-blue-400" aria-hidden="true" />
-              <span>WCAG 2.1 AA Compliant Contrast &amp; Focus Management</span>
-            </div>
-          </div>
         </div>
       </main>
 
