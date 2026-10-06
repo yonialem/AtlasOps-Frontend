@@ -180,6 +180,15 @@ export function getApiBaseUrl(): string {
   ) {
     return import.meta.env.VITE_API_URL.replace(/\/+$/, "");
   }
+  // In browser development on localhost port 3000, target backend port 3001 directly
+  if (
+    typeof window !== "undefined" &&
+    window.location &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") &&
+    window.location.port === "3000"
+  ) {
+    return "http://localhost:3001";
+  }
   return "";
 }
 

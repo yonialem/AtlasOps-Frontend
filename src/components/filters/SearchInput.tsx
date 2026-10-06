@@ -15,6 +15,7 @@ export interface SearchInputProps {
   onChange: (query: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  debounceMs?: number;
 }
 
 export function SearchInput({
@@ -22,6 +23,7 @@ export function SearchInput({
   onChange,
   placeholder = "Search incidents by ID, title, service, assignee... (Press '/' to focus)",
   disabled = false,
+  debounceMs = 300,
 }: SearchInputProps) {
   const [localValue, setLocalValue] = useState<string>(value);
   const [isDebouncing, setIsDebouncing] = useState<boolean>(false);
@@ -95,7 +97,7 @@ export function SearchInput({
       setIsDebouncing(false);
       debounceTimerRef.current = null;
       onChange(nextVal);
-    }, 300);
+    }, debounceMs);
   };
 
   const handleClear = () => {

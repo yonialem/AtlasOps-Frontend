@@ -177,6 +177,7 @@ export function FilterBar({
             onChange={(nextQ) =>
               setUrlState({ q: nextQ, page: 1 }, { replace: true })
             }
+            debounceMs={500}
           />
         </div>
 

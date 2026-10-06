@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ShieldAlert,
   Wifi,
@@ -7,6 +7,7 @@ import {
   Terminal,
   AlertTriangle,
   RefreshCw,
+  Plus,
 } from "lucide-react";
 import { IncidentSortField } from "@contracts";
 import {
@@ -14,6 +15,8 @@ import {
   listIncidents,
   serviceKeys,
   listServices,
+  userKeys,
+  listUsers,
   QueryProvider,
 } from "./api/index.ts";
 import { useUrlState } from "./hooks/index.ts";
@@ -23,11 +26,14 @@ import {
 } from "./components/incidents/index.ts";
 import { FilterBar } from "./components/filters/index.ts";
 import { IncidentDrawer } from "./components/drawer/index.ts";
+import { CreateIncidentModal } from "./components/modals/index.ts";
 
 function AppContent() {
   const [isOnline, setIsOnline] = useState<boolean>(
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
+  const queryClient = useQueryClient();
 
   const {
     state: urlState,
@@ -51,6 +57,32 @@ function AppContent() {
     };
   }, []);
 
+  // Global hotkey listener: 'c' opens Create Incident Modal when not editing text
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "c" || e.key === "C") {
+        const active = document.activeElement;
+        const tagName = active?.tagName?.toUpperCase();
+        const isEditable =
+          tagName === "INPUT" ||
+          tagName === "TEXTAREA" ||
+          tagName === "SELECT" ||
+          (active as HTMLElement | null)?.isContentEditable;
+
+        if (!isEditable) {
+          e.preventDefault();
+          setIsCreateModalOpen(true);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown);
+    };
+  }, []);
+
   // TanStack Query hook fetching /api/services to inspect backend health and provide service filter options
   const {
     data: servicesData,
@@ -60,6 +92,13 @@ function AppContent() {
   } = useQuery({
     queryKey: serviceKeys.list(),
     queryFn: ({ signal }) => listServices(signal),
+    enabled: isOnline,
+  });
+
+  // TanStack Query hook fetching /api/users for operator directory
+  const { data: usersData } = useQuery({
+    queryKey: userKeys.list(),
+    queryFn: ({ signal }) => listUsers(signal),
     enabled: isOnline,
   });
 
@@ -172,7 +211,7 @@ function AppContent() {
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-red-400"></span>
                 )}
               </span>
-              <span>
+              <span className="hidden sm:inline">
                 {apiStatus === "connected"
                   ? "Systems Operational"
                   : apiStatus === "checking"
@@ -183,7 +222,7 @@ function AppContent() {
 
             {/* Connection Status Indicator */}
             <div
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono border ${
+              className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono border ${
                 isOnline && apiStatus === "connected"
                   ? "bg-slate-800 border-slate-700 text-slate-300"
                   : isOnline && apiStatus === "checking"
@@ -234,6 +273,21 @@ function AppContent() {
                 <span>Retry</span>
               </button>
             )}
+
+            {/* New Incident CTA Button */}
+            <button
+              type="button"
+              onClick={() => setIsCreateModalOpen(true)}
+              className="shrink-0 inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900 min-h-[44px]"
+              title="Create new incident (Press 'c')"
+              aria-label="Create new incident"
+            >
+              <Plus className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span>New Incident</span>
+              <kbd className="hidden sm:inline-block ml-1 px-1.5 py-0.5 text-[10px] font-mono font-medium bg-blue-700/60 rounded border border-blue-400/30 text-blue-100">
+                c
+              </kbd>
+            </button>
           </div>
         </div>
       </header>
@@ -271,6 +325,19 @@ function AppContent() {
           <IncidentDrawer
             incidentId={urlState.incidentId}
             onClose={closeIncident}
+          />
+
+          {/* Create Incident Modal Dialog */}
+          <CreateIncidentModal
+            isOpen={isCreateModalOpen}
+            onClose={() => setIsCreateModalOpen(false)}
+            services={servicesData ?? []}
+            users={usersData ?? []}
+            isOnline={isOnline}
+            onSuccess={(created) => {
+              queryClient.invalidateQueries({ queryKey: incidentKeys.lists() });
+              openIncident(created.id);
+            }}
           />
 
           {/* Primary Incident Feed Section */}

@@ -60,7 +60,7 @@ export function readUrlState(search?: string): UrlState {
   const rawSearch =
     search !== undefined
       ? search
-      : typeof window !== "undefined"
+      : typeof window !== "undefined" && window.location
       ? window.location.search
       : "";
 
@@ -227,6 +227,8 @@ export function useUrlState(): UseUrlStateReturn {
 
   // Listen to browser Back/Forward popstate events
   useEffect(() => {
+    if (typeof window === "undefined" || !window.addEventListener) return;
+
     const handlePopState = () => {
       const newState = readUrlState();
       stateRef.current = newState;
@@ -280,7 +282,7 @@ export function useUrlState(): UseUrlStateReturn {
       setState(nextState);
 
       // Synchronize with HTML5 History API
-      if (typeof window !== "undefined" && window.history) {
+      if (typeof window !== "undefined" && window.location && window.history) {
         const currentPath = window.location.pathname || "/";
         const currentHash = window.location.hash || "";
         const newQueryString = serializeUrlState(nextState);
@@ -292,7 +294,9 @@ export function useUrlState(): UseUrlStateReturn {
           window.history.pushState(null, "", newUrl);
         }
 
-        window.dispatchEvent(new Event("popstate"));
+        if (typeof window.dispatchEvent === "function") {
+          window.dispatchEvent(new Event("popstate"));
+        }
       }
     },
     []
