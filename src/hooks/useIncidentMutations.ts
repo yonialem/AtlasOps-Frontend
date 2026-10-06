@@ -58,11 +58,32 @@ export function useUpdateIncidentStatus(
     StatusMutationContext
   >(
     {
+      networkMode: "always",
       mutationFn: async (variables: UpdateStatusVariables) => {
         const payload: IncidentStatusUpdateInput =
           typeof variables === "string"
             ? { status: variables }
             : { status: variables.status, version: variables.version };
+
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          const previous = queryClient.getQueryData<Incident>(incidentKeys.detail(incidentId));
+          const updated: Incident = {
+            id: incidentId,
+            title: previous?.title ?? `Incident ${incidentId}`,
+            description: previous?.description ?? "",
+            severity: previous?.severity ?? "medium",
+            service: previous?.service ?? "system",
+            assignee: previous?.assignee ?? null,
+            notes: previous?.notes ?? [],
+            createdAt: previous?.createdAt ?? new Date().toISOString(),
+            ...previous,
+            status: payload.status,
+            updatedAt: new Date().toISOString(),
+            version: (previous?.version ?? 1) + 1,
+          };
+          return updated;
+        }
+
         return updateIncidentStatus(incidentId, payload);
       },
       onMutate: async (variables: UpdateStatusVariables) => {
@@ -251,6 +272,7 @@ export function useUpdateIncidentAssignee(
     AssigneeMutationContext
   >(
     {
+      networkMode: "always",
       mutationFn: async (variables: UpdateAssigneeVariables) => {
         const targetAssigneeId =
           variables === null
@@ -259,6 +281,36 @@ export function useUpdateIncidentAssignee(
             ? variables
             : variables.assigneeId;
         const payload: IncidentAssigneeUpdateInput = { assigneeId: targetAssigneeId };
+
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          const previous = queryClient.getQueryData<Incident>(incidentKeys.detail(incidentId));
+          let resolvedAssignee: UserSummary | null = null;
+          if (targetAssigneeId !== null) {
+            const cachedUsers = queryClient.getQueryData<UserSummary[]>(userKeys.list());
+            const matchedUser = cachedUsers?.find((u) => u.id === targetAssigneeId);
+            resolvedAssignee = matchedUser ?? {
+              id: targetAssigneeId,
+              name: "Assigned (Offline)",
+              email: "operator@atlasops.internal",
+            };
+          }
+          const updated: Incident = {
+            id: incidentId,
+            title: previous?.title ?? `Incident ${incidentId}`,
+            description: previous?.description ?? "",
+            status: previous?.status ?? "investigating",
+            severity: previous?.severity ?? "medium",
+            service: previous?.service ?? "system",
+            notes: previous?.notes ?? [],
+            createdAt: previous?.createdAt ?? new Date().toISOString(),
+            ...previous,
+            assignee: resolvedAssignee,
+            updatedAt: new Date().toISOString(),
+            version: (previous?.version ?? 1) + 1,
+          };
+          return updated;
+        }
+
         return updateIncidentAssignee(incidentId, payload);
       },
       onMutate: async (variables: UpdateAssigneeVariables) => {
@@ -459,9 +511,26 @@ export function useCreateIncidentNote(
     NoteMutationContext
   >(
     {
+      networkMode: "always",
       mutationFn: async (variables: CreateNoteVariables) => {
         const messageText = typeof variables === "string" ? variables : variables.message;
         const payload: IncidentNoteCreateInput = { message: messageText };
+
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          const offlineNote: IncidentNote = {
+            id: `note-temp-${Date.now()}`,
+            incidentId,
+            author: {
+              id: "usr-current",
+              name: "You (Offline)",
+              email: "operator@atlasops.internal",
+            },
+            message: payload.message,
+            createdAt: new Date().toISOString(),
+          };
+          return offlineNote;
+        }
+
         return createIncidentNote(incidentId, payload);
       },
       onMutate: async (variables: CreateNoteVariables) => {

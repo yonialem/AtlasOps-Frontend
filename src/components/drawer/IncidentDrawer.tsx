@@ -105,6 +105,15 @@ export function IncidentDrawer({
   const assigneeMutation = useUpdateIncidentAssignee(incidentId ?? "");
   const addNoteMutation = useCreateIncidentNote(incidentId ?? "");
 
+  // Reset mutation and local pending states whenever incidentId changes or modal reopens
+  useEffect(() => {
+    statusMutation.reset();
+    assigneeMutation.reset();
+    addNoteMutation.reset();
+    setIsLocalStatusPending(false);
+    setIsLocalAssigneePending(false);
+  }, [incidentId]);
+
   const activeIncident = propIncident ?? fetchedIncident;
   const isQueryLoading = isFetchingIncident || isIncidentPending;
   const isLoading = propIsLoading ?? (isQueryLoading && !activeIncident);
