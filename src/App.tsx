@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ShieldAlert,
@@ -9,7 +9,7 @@ import {
   RefreshCw,
   Plus,
 } from "lucide-react";
-import { IncidentSortField } from "@contracts";
+import { Incident, IncidentSortField } from "@contracts";
 import {
   incidentKeys,
   listIncidents,
@@ -19,7 +19,7 @@ import {
   listUsers,
   QueryProvider,
 } from "./api/index.ts";
-import { useUrlState } from "./hooks/index.ts";
+import { useUrlState, useConnectivity } from "./hooks/index.ts";
 import {
   IncidentList,
   PaginationControls,
@@ -27,14 +27,21 @@ import {
 import { FilterBar } from "./components/filters/index.ts";
 import { IncidentDrawer } from "./components/drawer/index.ts";
 import { CreateIncidentModal } from "./components/modals/index.ts";
-import { ToastProvider, ToastContainer } from "./components/notifications/index.ts";
+import {
+  ToastProvider,
+  ToastContainer,
+  useToast,
+} from "./components/notifications/index.ts";
+import { OfflineBanner, OutageScreen } from "./components/common/index.ts";
+import { getQueueCount, replayQueue } from "./services/index.ts";
 
 function AppContent() {
-  const [isOnline, setIsOnline] = useState<boolean>(
-    typeof navigator !== "undefined" ? navigator.onLine : true
-  );
+  const { isOnline } = useConnectivity();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
+  const [queuedCount, setQueuedCount] = useState<number>(() => getQueueCount());
   const queryClient = useQueryClient();
+  const { showToast } = useToast();
+  const prevOnlineRef = useRef<boolean>(isOnline);
 
   const {
     state: urlState,
@@ -45,18 +52,36 @@ function AppContent() {
     queryObject,
   } = useUrlState();
 
+  // Listen to storage events & periodic intervals to sync queued items counter
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-
+    const updateCount = () => setQueuedCount(getQueueCount());
+    window.addEventListener("storage", updateCount);
+    const interval = setInterval(updateCount, 1000);
     return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("storage", updateCount);
+      clearInterval(interval);
     };
   }, []);
+
+  // Automatically trigger mutation queue replay when reconnecting (offline -> online)
+  useEffect(() => {
+    if (isOnline && !prevOnlineRef.current) {
+      replayQueue(queryClient, showToast).then(() => {
+        setQueuedCount(getQueueCount());
+      });
+    }
+    prevOnlineRef.current = isOnline;
+  }, [isOnline, queryClient, showToast]);
+
+  // If online on initial mount with leftover queued items, trigger replay
+  useEffect(() => {
+    if (isOnline && getQueueCount() > 0) {
+      replayQueue(queryClient, showToast).then(() => {
+        setQueuedCount(getQueueCount());
+      });
+    }
+  }, []);
+
 
   // Global hotkey listener: 'c' opens Create Incident Modal when not editing text
   useEffect(() => {
@@ -108,11 +133,20 @@ function AppContent() {
     data: incidentsData,
     isLoading: isIncidentsLoading,
     isError: isIncidentsError,
+    error: incidentsError,
     refetch: refetchIncidents,
   } = useQuery({
     queryKey: incidentKeys.list(queryObject),
     queryFn: ({ signal }) => listIncidents(queryObject, signal),
   });
+
+  const selectedIncident = useMemo(() => {
+    if (!urlState.incidentId) return undefined;
+    return (
+      incidentsData?.items.find((inc) => inc.id === urlState.incidentId) ??
+      queryClient.getQueryData<Incident>(incidentKeys.detail(urlState.incidentId))
+    );
+  }, [urlState.incidentId, incidentsData?.items, queryClient]);
 
   const apiStatus: "checking" | "connected" | "disconnected" = !isOnline
     ? "disconnected"
@@ -137,6 +171,26 @@ function AppContent() {
       urlState.service.length > 0
   );
 
+  const hasCachedIncidents = Boolean(
+    incidentsData?.items && incidentsData.items.length > 0
+  );
+
+  // When query fails completely with no cached incidents, display diagnostic OutageScreen
+  if (isIncidentsError && !hasCachedIncidents) {
+    return (
+      <div className="min-h-screen bg-app-bg text-txt-primary flex flex-col selection:bg-blue-600 selection:text-white">
+        <OfflineBanner isOnline={isOnline} queuedCount={queuedCount} />
+        <main className="flex-1 flex items-center justify-center p-4">
+          <OutageScreen
+            error={incidentsError as Error}
+            onRetry={() => refetchIncidents()}
+            isRetrying={isIncidentsLoading}
+          />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-app-bg text-txt-primary flex flex-col selection:bg-blue-600 selection:text-white">
       {/* ARIA Live Regions for Assistive Technologies */}
@@ -154,15 +208,7 @@ function AppContent() {
       />
 
       {/* Persistent Offline Banner if offline */}
-      {!isOnline && (
-        <div
-          role="alert"
-          className="bg-amber-950/80 border-b border-amber-600 px-4 py-2 text-center text-sm font-medium text-amber-200 flex items-center justify-center gap-2"
-        >
-          <WifiOff className="w-4 h-4 text-amber-400" aria-hidden="true" />
-          <span>You are currently working in offline mode. Changes will be queued and synchronized upon reconnection.</span>
-        </div>
-      )}
+      <OfflineBanner isOnline={isOnline} queuedCount={queuedCount} />
 
       {/* Brand Header */}
       <header className="border-b border-border-subtle bg-surface/80 backdrop-blur-sm sticky top-0 z-30">
@@ -325,6 +371,8 @@ function AppContent() {
           {/* Incident Detail Slide-Over Drawer */}
           <IncidentDrawer
             incidentId={urlState.incidentId}
+            incident={selectedIncident}
+            users={usersData ?? []}
             onClose={closeIncident}
           />
 

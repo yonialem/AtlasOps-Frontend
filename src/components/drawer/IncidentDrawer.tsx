@@ -61,10 +61,11 @@ export function IncidentDrawer({
   const [isLocalStatusPending, setIsLocalStatusPending] = useState<boolean>(false);
   const [isLocalAssigneePending, setIsLocalAssigneePending] = useState<boolean>(false);
 
-  // TanStack Query: fetch incident if not provided via props
+  // TanStack Query: fetch incident if not provided via props or seed from cache
   const {
     data: fetchedIncident,
     isLoading: isFetchingIncident,
+    isPending: isIncidentPending,
     isError: isIncidentQueryError,
     refetch: refetchIncident,
   } = useQuery(
@@ -72,6 +73,19 @@ export function IncidentDrawer({
       queryKey: incidentKeys.detail(incidentId ?? ""),
       queryFn: ({ signal }) => getIncident(incidentId!, signal),
       enabled: Boolean(incidentId && !propIncident),
+      initialData: () => {
+        if (!incidentId) return undefined;
+        if (propIncident) return propIncident;
+        const cached = queryClient.getQueryData<Incident>(incidentKeys.detail(incidentId));
+        if (cached) return cached;
+        const listQueries = queryClient.getQueryCache().findAll({ queryKey: incidentKeys.lists() });
+        for (const q of listQueries) {
+          const data = q.state.data as { items?: Incident[] } | undefined;
+          const found = data?.items?.find((item) => item.id === incidentId);
+          if (found) return found;
+        }
+        return undefined;
+      },
     },
     queryClient
   );
@@ -92,7 +106,8 @@ export function IncidentDrawer({
   const addNoteMutation = useCreateIncidentNote(incidentId ?? "");
 
   const activeIncident = propIncident ?? fetchedIncident;
-  const isLoading = propIsLoading ?? (isFetchingIncident && !activeIncident);
+  const isQueryLoading = isFetchingIncident || isIncidentPending;
+  const isLoading = propIsLoading ?? (isQueryLoading && !activeIncident);
   const isError = propIsError ?? (isIncidentQueryError && !activeIncident);
   const usersList = propUsers ?? fetchedUsers ?? [];
 
@@ -369,6 +384,25 @@ export function IncidentDrawer({
               </div>
             </div>
           </>
+        ) : !activeIncident ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-3">
+            <AlertTriangle className="w-8 h-8 text-amber-400" aria-hidden="true" />
+            <h2 id="drawer-title" className="text-sm font-bold text-txt-primary">
+              Incident Details Unavailable
+            </h2>
+            <p className="text-xs text-txt-secondary max-w-sm">
+              {typeof navigator !== "undefined" && !navigator.onLine
+                ? "You are currently offline and this incident is not yet cached locally."
+                : "Incident details could not be found."}
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface-elevated hover:bg-slate-700 text-txt-secondary transition-colors"
+            >
+              Close
+            </button>
+          </div>
         ) : null}
       </div>
     </div>

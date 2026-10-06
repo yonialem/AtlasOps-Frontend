@@ -29,6 +29,7 @@ import { incidentKeys, userKeys } from "../api/keys.ts";
 import { queryClient as defaultQueryClient } from "../api/queryClient.ts";
 import { ApiError, isConflictError } from "../api/client.ts";
 import { useToast } from "../components/notifications/ToastContext.tsx";
+import { enqueue } from "../services/offlineQueue.ts";
 
 export type UpdateStatusVariables =
   | IncidentStatus
@@ -67,6 +68,19 @@ export function useUpdateIncidentStatus(
       onMutate: async (variables: UpdateStatusVariables) => {
         const targetStatus: IncidentStatus =
           typeof variables === "string" ? variables : variables.status;
+
+        // If offline, enqueue mutation for background reconnection replay
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          const payload: IncidentStatusUpdateInput =
+            typeof variables === "string"
+              ? { status: variables }
+              : { status: variables.status, version: variables.version };
+          enqueue({
+            type: "UPDATE_STATUS",
+            incidentId,
+            payload,
+          });
+        }
 
         // 1. Cancel in-flight queries to prevent stale data overwriting optimistic update
         await queryClient.cancelQueries({ queryKey: incidentKeys.detail(incidentId) });
@@ -127,6 +141,15 @@ export function useUpdateIncidentStatus(
         return { previousDetail, previousLists };
       },
       onError: (err: unknown, variables, context) => {
+        // When offline, do not rollback optimistic updates since mutation was queued
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          showToast({
+            type: "info",
+            message: "Offline: Status change queued and will synchronize when connection is restored.",
+          });
+          return;
+        }
+
         // Rollback Detail
         if (context?.previousDetail) {
           queryClient.setQueryData(incidentKeys.detail(incidentId), context.previousDetail);
@@ -186,6 +209,9 @@ export function useUpdateIncidentStatus(
         });
       },
       onSettled: () => {
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          return;
+        }
         queryClient.invalidateQueries({ queryKey: incidentKeys.detail(incidentId) });
         queryClient.invalidateQueries({ queryKey: incidentKeys.lists() });
       },
@@ -242,6 +268,15 @@ export function useUpdateIncidentAssignee(
             : typeof variables === "string"
             ? variables
             : variables.assigneeId;
+
+        // If offline, enqueue mutation for background reconnection replay
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          enqueue({
+            type: "UPDATE_ASSIGNEE",
+            incidentId,
+            payload: { assigneeId: targetAssigneeId },
+          });
+        }
 
         // 1. Cancel in-flight queries
         await queryClient.cancelQueries({ queryKey: incidentKeys.detail(incidentId) });
@@ -316,6 +351,15 @@ export function useUpdateIncidentAssignee(
         return { previousDetail, previousLists };
       },
       onError: (err: unknown, variables, context) => {
+        // When offline, do not rollback optimistic updates since mutation was queued
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          showToast({
+            type: "info",
+            message: "Offline: Assignee change queued and will synchronize when connection is restored.",
+          });
+          return;
+        }
+
         if (context?.previousDetail) {
           queryClient.setQueryData(incidentKeys.detail(incidentId), context.previousDetail);
         }
@@ -374,6 +418,9 @@ export function useUpdateIncidentAssignee(
         });
       },
       onSettled: () => {
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          return;
+        }
         queryClient.invalidateQueries({ queryKey: incidentKeys.detail(incidentId) });
         queryClient.invalidateQueries({ queryKey: incidentKeys.lists() });
       },
@@ -420,6 +467,15 @@ export function useCreateIncidentNote(
       onMutate: async (variables: CreateNoteVariables) => {
         const messageText = typeof variables === "string" ? variables : variables.message;
 
+        // If offline, enqueue mutation for background reconnection replay
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          enqueue({
+            type: "CREATE_NOTE",
+            incidentId,
+            payload: { message: messageText },
+          });
+        }
+
         // 1. Cancel in-flight queries
         await queryClient.cancelQueries({ queryKey: incidentKeys.detail(incidentId) });
 
@@ -452,6 +508,15 @@ export function useCreateIncidentNote(
         return { previousDetail, optimisticNote };
       },
       onError: (_err: unknown, variables, context) => {
+        // When offline, do not rollback optimistic updates since mutation was queued
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          showToast({
+            type: "info",
+            message: "Offline: Investigation note queued and will synchronize when connection is restored.",
+          });
+          return;
+        }
+
         if (context?.previousDetail) {
           queryClient.setQueryData(incidentKeys.detail(incidentId), context.previousDetail);
         }
@@ -486,6 +551,9 @@ export function useCreateIncidentNote(
         });
       },
       onSettled: () => {
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          return;
+        }
         queryClient.invalidateQueries({ queryKey: incidentKeys.detail(incidentId) });
       },
     },

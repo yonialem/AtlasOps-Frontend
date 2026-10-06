@@ -10,3 +10,5 @@ export * from "./useUrlState.ts";
 export { default as useUrlState } from "./useUrlState.ts";
 export * from "./useIncidentMutations.ts";
 export { default as useIncidentMutations } from "./useIncidentMutations.ts";
+export * from "./useConnectivity.ts";
+export { default as useConnectivity } from "./useConnectivity.ts";
