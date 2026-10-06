@@ -73,7 +73,6 @@ const SEVERITY_OPTIONS: readonly DropdownOption<IncidentSeverity>[] = [
 
 export function FilterBar({
   availableServices = [],
-  isLoading = false,
   className = "",
   urlState: propUrlState,
   setUrlState: propSetUrlState,
@@ -178,7 +177,6 @@ export function FilterBar({
             onChange={(nextQ) =>
               setUrlState({ q: nextQ, page: 1 }, { replace: true })
             }
-            disabled={isLoading}
           />
         </div>
 
@@ -191,7 +189,6 @@ export function FilterBar({
             onChange={(nextStatuses) =>
               setUrlState({ status: nextStatuses, page: 1 })
             }
-            disabled={isLoading}
           />
 
           <MultiSelectDropdown
@@ -201,7 +198,6 @@ export function FilterBar({
             onChange={(nextSeverities) =>
               setUrlState({ severity: nextSeverities, page: 1 })
             }
-            disabled={isLoading}
           />
 
           <MultiSelectDropdown
@@ -211,7 +207,6 @@ export function FilterBar({
             onChange={(nextServices) =>
               setUrlState({ service: nextServices, page: 1 })
             }
-            disabled={isLoading}
           />
         </div>
       </div>

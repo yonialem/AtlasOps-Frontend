@@ -27,15 +27,23 @@ export function SearchInput({
   const [isDebouncing, setIsDebouncing] = useState<boolean>(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localValueRef = useRef<string>(localValue);
+  localValueRef.current = localValue;
 
   // Synchronize internal local value when external value changes (e.g. URL update or Clear All)
   useEffect(() => {
-    setLocalValue(value);
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
+    const isFocused =
+      typeof document !== "undefined" && document.activeElement === inputRef.current;
+
+    // Only synchronize if value changed and either input is not focused or it's an external clear
+    if (value !== localValueRef.current && (!isFocused || value === "")) {
+      setLocalValue(value);
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+      setIsDebouncing(false);
     }
-    setIsDebouncing(false);
   }, [value]);
 
   // Clean up timer on unmount

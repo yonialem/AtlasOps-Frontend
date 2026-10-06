@@ -7,7 +7,6 @@ import {
   Terminal,
   AlertTriangle,
   RefreshCw,
-  X,
 } from "lucide-react";
 import { IncidentSortField } from "@contracts";
 import {
@@ -23,6 +22,7 @@ import {
   PaginationControls,
 } from "./components/incidents/index.ts";
 import { FilterBar } from "./components/filters/index.ts";
+import { IncidentDrawer } from "./components/drawer/index.ts";
 
 function AppContent() {
   const [isOnline, setIsOnline] = useState<boolean>(
@@ -267,24 +267,11 @@ function AppContent() {
             </div>
           </div>
 
-          {/* Active Detail Drawer Indicator if selected */}
-          {urlState.incidentId && (
-            <div className="mt-4 p-3 rounded-lg bg-amber-950/40 border border-amber-800 text-amber-200 text-xs flex items-center justify-between">
-              <span className="font-mono">
-                Active Detail Drawer: <strong>{urlState.incidentId}</strong> (Drawer component implemented in TASK-FE-006)
-              </span>
-              <button
-                type="button"
-                onClick={closeIncident}
-                className="hover:text-white flex items-center gap-1 text-xs font-mono"
-                title="Close incident drawer"
-                aria-label="Close incident detail drawer"
-              >
-                <span>Close</span>
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
+          {/* Incident Detail Slide-Over Drawer */}
+          <IncidentDrawer
+            incidentId={urlState.incidentId}
+            onClose={closeIncident}
+          />
 
           {/* Primary Incident Feed Section */}
           <section aria-labelledby="incident-feed-heading" className="mt-6">
