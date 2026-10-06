@@ -11,6 +11,10 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  // @ts-expect-error Vitest configuration
+  test: {
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.worktrees/**"],
+  },
   server: {
     port: 3000,
     proxy: {
