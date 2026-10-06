@@ -27,6 +27,7 @@ import {
 import { FilterBar } from "./components/filters/index.ts";
 import { IncidentDrawer } from "./components/drawer/index.ts";
 import { CreateIncidentModal } from "./components/modals/index.ts";
+import { ToastProvider, ToastContainer } from "./components/notifications/index.ts";
 
 function AppContent() {
   const [isOnline, setIsOnline] = useState<boolean>(
@@ -412,7 +413,10 @@ function AppContent() {
 export function App() {
   return (
     <QueryProvider>
-      <AppContent />
+      <ToastProvider>
+        <AppContent />
+        <ToastContainer />
+      </ToastProvider>
     </QueryProvider>
   );
 }

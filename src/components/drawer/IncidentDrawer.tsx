@@ -8,22 +8,22 @@
  */
 
 import { useState, useEffect, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock, RefreshCw, AlertTriangle, Layers } from "lucide-react";
 import {
   Incident,
   UserSummary,
   IncidentStatus,
 } from "../../contracts/incident.types.ts";
-import {
-  getIncident,
-  updateIncidentStatus,
-  updateIncidentAssignee,
-  createIncidentNote,
-} from "../../api/incidents.ts";
+import { getIncident } from "../../api/incidents.ts";
 import { listUsers } from "../../api/users.ts";
 import { incidentKeys, userKeys } from "../../api/keys.ts";
 import { queryClient as defaultQueryClient } from "../../api/queryClient.ts";
+import {
+  useUpdateIncidentStatus,
+  useUpdateIncidentAssignee,
+  useCreateIncidentNote,
+} from "../../hooks/index.ts";
 import { formatRelativeTime } from "../incidents/timeUtils.ts";
 import { DrawerHeader } from "./DrawerHeader.tsx";
 import { StatusTransitionControl } from "./StatusTransitionControl.tsx";
@@ -86,47 +86,10 @@ export function IncidentDrawer({
     queryClient
   );
 
-  // Mutations when props callbacks are omitted
-  const statusMutation = useMutation(
-    {
-      mutationFn: (targetStatus: IncidentStatus) =>
-        updateIncidentStatus(incidentId!, { status: targetStatus }),
-      onSuccess: () => {
-        if (incidentId) {
-          queryClient.invalidateQueries({ queryKey: incidentKeys.detail(incidentId) });
-        }
-        queryClient.invalidateQueries({ queryKey: incidentKeys.all });
-      },
-    },
-    queryClient
-  );
-
-  const assigneeMutation = useMutation(
-    {
-      mutationFn: (newAssigneeId: string | null) =>
-        updateIncidentAssignee(incidentId!, { assigneeId: newAssigneeId }),
-      onSuccess: () => {
-        if (incidentId) {
-          queryClient.invalidateQueries({ queryKey: incidentKeys.detail(incidentId) });
-        }
-        queryClient.invalidateQueries({ queryKey: incidentKeys.all });
-      },
-    },
-    queryClient
-  );
-
-  const addNoteMutation = useMutation(
-    {
-      mutationFn: (msg: string) =>
-        createIncidentNote(incidentId!, { message: msg }),
-      onSuccess: () => {
-        if (incidentId) {
-          queryClient.invalidateQueries({ queryKey: incidentKeys.detail(incidentId) });
-        }
-      },
-    },
-    queryClient
-  );
+  // Optimistic Mutations
+  const statusMutation = useUpdateIncidentStatus(incidentId ?? "");
+  const assigneeMutation = useUpdateIncidentAssignee(incidentId ?? "");
+  const addNoteMutation = useCreateIncidentNote(incidentId ?? "");
 
   const activeIncident = propIncident ?? fetchedIncident;
   const isLoading = propIsLoading ?? (isFetchingIncident && !activeIncident);
