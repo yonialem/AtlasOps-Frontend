@@ -124,6 +124,14 @@ export function IncidentTable({
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     onSelectIncident?.(incident.id);
+                  } else if (e.key === "ArrowDown" || e.key === "j" || e.key === "J") {
+                    e.preventDefault();
+                    const nextRow = e.currentTarget.nextElementSibling as HTMLElement | null;
+                    nextRow?.focus();
+                  } else if (e.key === "ArrowUp" || e.key === "k" || e.key === "K") {
+                    e.preventDefault();
+                    const prevRow = e.currentTarget.previousElementSibling as HTMLElement | null;
+                    prevRow?.focus();
                   }
                 }}
                 className={`cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-inset ${

@@ -19,3 +19,6 @@ coverage/
 *.log
 .env
 .env.local
+
+# Submission Document
+SUBMISSION.md
