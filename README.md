@@ -14,7 +14,7 @@ AtlasOps Incident Management Console is a responsive, accessible React 18 single
 2. **Keyboard Navigation**: Operators navigate the incident list at speed using Vim-style `j`/`k` (or arrow) keys, hit `Enter` to open an incident drawer, `/` to focus search, and `c` to trigger creation.
 3. **Deep Linking & Side Drawer Navigation**: Selecting an incident updates the URL query string (`?incidentId=INC-1042`), opening a slide-over drawer that retains list filters, scroll position, and pagination in the background. Closing the drawer (`Esc` or `[X]`) cleanses the parameter while preserving browser history navigation.
 4. **Optimistic Status & Assignee Updates**: State transitions (e.g., `triggered` -> `investigating` -> `resolved`) and operator assignments apply optimistically with sub-second feedback, rolling back safely if a 409 version conflict or network failure occurs.
-5. **Investigation Log & Timeline**: Operators append chronological Markdown-safe notes with character counter enforcement and draft preservation.
+5. **Investigation Log & Timeline**: Operators append chronological Markdown-safe notes with character counter enforcement and draft preservation. Notes apply immediately via instant dual-cache optimistic updates across both incident detail and active list query caches without UI flicker or stale reads.
 6. **Incident Creation**: Accessible modal dialog with client-side Zod validation, error focus management, and automatic offline submission protection.
 7. **Offline Resilience**: Offline indicators, queuing of status/assignee/note updates in `localStorage`, and automated FIFO synchronization upon network reconnection.
 
@@ -95,13 +95,14 @@ frontend/
 - Query keys are deterministically structured (`['incidents', parsedQuery]`, `['incident', id]`, `['services']`, `['users']`).
 - Revalidations leverage Stale-While-Revalidate with `staleTime: 10_000ms` and `refetchOnWindowFocus: true`.
 - Background refetches display a non-intrusive indeterminate loading indicator above the table rather than tearing down rendered rows.
+- **Dual-Cache Synchronization**: Note creation, status transitions, and reassignments optimistically update both `incidentKeys.detail(id)` and all active `incidentKeys.lists()` queries simultaneously, snapshotting previous state for instant rollback on 409 conflict or network error. Drawer initialization feeds from list query cache (`initialData`) ensuring zero-delay note rendering.
 
 ### State Ownership (5-Tier State Architecture)
 1. **Local State**: Ephemeral UI state (active dropdowns, tooltips, roving cursor index) stored in component `useState`.
 2. **URL State**: Authoritative single source of truth for list view filters (`q`, `status`, `severity`, `service`, `sort`, `order`, `page`, `pageSize`) and open drawer ID (`incidentId`).
 3. **Form State**: Controlled React state coupled with Zod validation (`IncidentCreateInputSchema`), retaining drafts across failures.
 4. **Shared Client State**: Network connectivity status (`navigator.onLine`), toast notification queue, and offline mutation queue.
-5. **Server Cache**: TanStack Query cache with optimistic updates and snapshot rollbacks.
+5. **Server Cache**: TanStack Query cache with dual-cache optimistic updates (detail + lists) and snapshot rollbacks.
 
 ### URL State Handling
 - Bidirectional synchronization via custom `useUrlState` hook.
@@ -240,7 +241,7 @@ Unit and integration tests using Vitest and Mock Service Worker provide sub-seco
 ### Future Enhancements (Outside Required Assignment Scope):
 1. **Server-Sent Events (SSE) / WebSockets:** Broadcast live updates in real-time when multiple operators triage incidents simultaneously (`/api/incidents/events`).
 2. **Column Customization & Density Toggle:** Allow operators to reorder table columns or switch between compact, comfortable, and spacious row density.
-3. **Advanced Keyboard Row Cycling:** Add Vim-style <kbd>j</kbd>/<kbd>k</kbd> hotkeys for cycling focus between rows without pressing Tab.
+3. **Saved Filter Presets:** Allow operators to bookmark custom filter combinations (e.g. 'Critical Payments Outages') in local storage.
 4. **Storybook Documentation:** Export an isolated Storybook component catalog for the design system tokens.
 
 ---
