@@ -72,12 +72,12 @@ export function IncidentDrawer({
     {
       queryKey: incidentKeys.detail(incidentId ?? ""),
       queryFn: ({ signal }) => getIncident(incidentId!, signal),
-      enabled: Boolean(incidentId && !propIncident),
+      enabled: Boolean(incidentId),
       initialData: () => {
         if (!incidentId) return undefined;
-        if (propIncident) return propIncident;
         const cached = queryClient.getQueryData<Incident>(incidentKeys.detail(incidentId));
         if (cached) return cached;
+        if (propIncident) return propIncident;
         const listQueries = queryClient.getQueryCache().findAll({ queryKey: incidentKeys.lists() });
         for (const q of listQueries) {
           const data = q.state.data as { items?: Incident[] } | undefined;
@@ -86,6 +86,7 @@ export function IncidentDrawer({
         }
         return undefined;
       },
+      initialDataUpdatedAt: () => Date.now(),
     },
     queryClient
   );
@@ -114,7 +115,7 @@ export function IncidentDrawer({
     setIsLocalAssigneePending(false);
   }, [incidentId]);
 
-  const activeIncident = propIncident ?? fetchedIncident;
+  const activeIncident = fetchedIncident ?? propIncident;
   const isQueryLoading = isFetchingIncident || isIncidentPending;
   const isLoading = propIsLoading ?? (isQueryLoading && !activeIncident);
   const isError = propIsError ?? (isIncidentQueryError && !activeIncident);

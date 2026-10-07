@@ -490,6 +490,7 @@ export type CreateNoteVariables =
 
 export interface NoteMutationContext {
   previousDetail?: Incident;
+  previousLists?: [readonly unknown[], unknown][];
   optimisticNote?: IncidentNote;
 }
 
@@ -547,9 +548,34 @@ export function useCreateIncidentNote(
 
         // 1. Cancel in-flight queries
         await queryClient.cancelQueries({ queryKey: incidentKeys.detail(incidentId) });
+        await queryClient.cancelQueries({ queryKey: incidentKeys.lists() });
 
         // 2. Snapshot
         const previousDetail = queryClient.getQueryData<Incident>(incidentKeys.detail(incidentId));
+        const previousLists = queryClient.getQueriesData<unknown>({
+          queryKey: incidentKeys.lists(),
+        });
+
+        // Resolve effective detail object to update
+        let effectiveDetail = previousDetail;
+        if (!effectiveDetail) {
+          for (const [, listResponse] of previousLists) {
+            if (
+              listResponse &&
+              typeof listResponse === "object" &&
+              "items" in listResponse &&
+              Array.isArray((listResponse as IncidentsListResponse).items)
+            ) {
+              const found = (listResponse as IncidentsListResponse).items.find(
+                (item) => item.id === incidentId
+              );
+              if (found) {
+                effectiveDetail = found;
+                break;
+              }
+            }
+          }
+        }
 
         const optimisticNote: IncidentNote = {
           id: `temp-${Date.now()}`,
@@ -566,15 +592,56 @@ export function useCreateIncidentNote(
         const optimisticUpdatedAt = new Date().toISOString();
 
         // 3. Optimistically update Detail cache
-        if (previousDetail) {
+        if (effectiveDetail) {
           queryClient.setQueryData<Incident>(incidentKeys.detail(incidentId), {
-            ...previousDetail,
-            notes: [...(previousDetail.notes || []), optimisticNote],
+            ...effectiveDetail,
+            notes: [...(effectiveDetail.notes || []), optimisticNote],
             updatedAt: optimisticUpdatedAt,
           });
         }
 
-        return { previousDetail, optimisticNote };
+        // 4. Optimistically update List caches
+        previousLists.forEach(([queryKey, listResponse]) => {
+          if (!listResponse) return;
+
+          if (Array.isArray(listResponse)) {
+            queryClient.setQueryData<Incident[]>(
+              queryKey,
+              listResponse.map((item) =>
+                item.id === incidentId
+                  ? {
+                      ...item,
+                      notes: [...(item.notes || []), optimisticNote],
+                      updatedAt: optimisticUpdatedAt,
+                    }
+                  : item
+              )
+            );
+            return;
+          }
+
+          if (
+            typeof listResponse === "object" &&
+            "items" in listResponse &&
+            Array.isArray((listResponse as IncidentsListResponse).items)
+          ) {
+            const paginated = listResponse as IncidentsListResponse;
+            queryClient.setQueryData<IncidentsListResponse>(queryKey, {
+              ...paginated,
+              items: paginated.items.map((item) =>
+                item.id === incidentId
+                  ? {
+                      ...item,
+                      notes: [...(item.notes || []), optimisticNote],
+                      updatedAt: optimisticUpdatedAt,
+                    }
+                  : item
+              ),
+            });
+          }
+        });
+
+        return { previousDetail, previousLists, optimisticNote };
       },
       onError: (_err: unknown, variables, context) => {
         // When offline, do not rollback optimistic updates since mutation was queued
@@ -588,6 +655,11 @@ export function useCreateIncidentNote(
 
         if (context?.previousDetail) {
           queryClient.setQueryData(incidentKeys.detail(incidentId), context.previousDetail);
+        }
+        if (context?.previousLists) {
+          context.previousLists.forEach(([queryKey, listResponse]) => {
+            queryClient.setQueryData(queryKey, listResponse);
+          });
         }
 
         showToast({
@@ -610,7 +682,50 @@ export function useCreateIncidentNote(
             return {
               ...old,
               notes: exists ? tempReplaced : [...tempReplaced, data],
+              updatedAt:
+                data.createdAt && data.createdAt > old.updatedAt ? data.createdAt : old.updatedAt,
             };
+          });
+
+          queryClient.setQueriesData<unknown>({ queryKey: incidentKeys.lists() }, (oldList: unknown) => {
+            if (!oldList) return oldList;
+            if (Array.isArray(oldList)) {
+              return (oldList as Incident[]).map((item: Incident) => {
+                if (item.id !== incidentId) return item;
+                const existingNotes = item.notes || [];
+                const tempReplaced = existingNotes.map((n: IncidentNote) =>
+                  n.id.startsWith("temp-") && n.message === data.message ? data : n
+                );
+                const exists = tempReplaced.some((n: IncidentNote) => n.id === data.id);
+                return {
+                  ...item,
+                  notes: exists ? tempReplaced : [...tempReplaced, data],
+                };
+              });
+            }
+            if (
+              typeof oldList === "object" &&
+              "items" in oldList &&
+              Array.isArray((oldList as IncidentsListResponse).items)
+            ) {
+              const paginated = oldList as IncidentsListResponse;
+              return {
+                ...paginated,
+                items: paginated.items.map((item: Incident) => {
+                  if (item.id !== incidentId) return item;
+                  const existingNotes = item.notes || [];
+                  const tempReplaced = existingNotes.map((n: IncidentNote) =>
+                    n.id.startsWith("temp-") && n.message === data.message ? data : n
+                  );
+                  const exists = tempReplaced.some((n: IncidentNote) => n.id === data.id);
+                  return {
+                    ...item,
+                    notes: exists ? tempReplaced : [...tempReplaced, data],
+                  };
+                }),
+              };
+            }
+            return oldList;
           });
         }
 
@@ -624,6 +739,7 @@ export function useCreateIncidentNote(
           return;
         }
         queryClient.invalidateQueries({ queryKey: incidentKeys.detail(incidentId) });
+        queryClient.invalidateQueries({ queryKey: incidentKeys.lists() });
       },
     },
     queryClient

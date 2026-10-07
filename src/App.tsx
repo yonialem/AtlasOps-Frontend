@@ -143,8 +143,8 @@ function AppContent() {
   const selectedIncident = useMemo(() => {
     if (!urlState.incidentId) return undefined;
     return (
-      incidentsData?.items.find((inc) => inc.id === urlState.incidentId) ??
-      queryClient.getQueryData<Incident>(incidentKeys.detail(urlState.incidentId))
+      queryClient.getQueryData<Incident>(incidentKeys.detail(urlState.incidentId)) ??
+      incidentsData?.items.find((inc) => inc.id === urlState.incidentId)
     );
   }, [urlState.incidentId, incidentsData?.items, queryClient]);
 
